@@ -453,6 +453,7 @@ class db
         }
         $where = empty($where) ? "" : " Where " . implode(" And ", $where);
         $sql = substr($sql, 0, -1) . $where;
+        log::error($sql);
         if ($return_sql) 
         {
             return $sql;
