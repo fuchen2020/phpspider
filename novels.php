@@ -8,55 +8,109 @@
 ini_set("memory_limit", "1024M");
 require dirname(__FILE__) . '/core/init.php';
 
-/* Do NOT delete this comment */
-/* 不要删除这段注释 */
-
-$configs = array(
-    'name' => '最强逆袭',
-    'tasknum' => 1,
-    'export' => array(
-        'type' => 'sql',
-        'file' => PATH_DATA . '/zuiqiangnixi.sql'
-    ),
-    'domains' => array(
-        'www.zwdu.com'
-    ),
-    'scan_urls' => array(
-        'http://www.zwdu.com/book/23488/'
-    ),
-    'content_url_regexes' => array(
-        'http://www.zwdu.com/book/23488/\d+.html'
-    ),
-    'fields' => array(
-        array(
-            'name' => 'content',
-            'selector' => '//*[@id="content"]',
-            'required' => true
-        )
-    )
-);
-
-$spider = new phpspider($configs);
-
-$spider->on_extract_field = function ($fielaname, $data, $page)
+class novels
 {
-    if ($fielaname == 'content') {
-        str_replace(' ', '', $data['content']);
+    /**
+     * @var string
+     */
+    protected $url;
+
+    /**
+     * @var array
+     */
+    protected $xPathSelectors = [];
+
+    /**
+     * novels constructor.
+     * @param $url
+     * @param array $xPathSelectors
+     */
+    public function __construct($url, $xPathSelectors = [])
+    {
+        $this->url = $url;
+        $this->xPathSelectors = $xPathSelectors;
     }
 
-    return $data;
-};
+    /**
+     * 获取小说信息
+     * @return bool
+     */
+    public function getNovelInfo()
+    {
+        if ($this->xPathSelectors) {
+            $html = $this->getHtml();
 
-$spider->on_extract_page = function ($page, $data)
-{
-    //截取sort
-    $url = $page['url'];
+            foreach ($this->xPathSelectors as $key => $xPathSelector) {
+                $data[$key] = selector::select($html, $xPathSelector);
+            }
 
-    $sort = substr($url, strrpos($url, '/') + 1, strrpos($url, '.') - (strrpos($url, '/') + 1));
-    //写入数据库
-    db::update('chapter', ['content' => $data['content']], ["sort = {$sort}"]);
-};
+            return $this->handelData($data);
+        }
 
-$spider->start();
+        return false;
+    }
+
+    /**\
+     * 处理数据
+     * @param array $data
+     * @return bool|void
+     */
+    protected function handelData(array $data)
+    {
+        $data['author'] = trim(substr($data['author'], strpos($data['author'], '：') + 3), '');
+        $data['description'] = str_replace(' ', '', $data['description']);
+
+        $res = db::insert('novels', [
+            'name' => $data['name'],
+            'author' => $data['author'],
+            'description' => $data['description'],
+            'type' => $data['type'],
+            'image' => $data['image'],
+            'created_at' => date('Y-m-d H:i:s', time())
+        ]);
+
+        if (false === $res) {
+            return false;
+        }
+
+        //写入章节
+        $this->chapter([$res, $data['sort'], $data['chapter']]);
+
+        return $res;
+    }
+
+    /**
+     * 处理文章章节
+     * @param array $data
+     * @return bool
+     */
+    protected function chapter(array $data)
+    {
+        list($novel_id, $sort, $chapter) = $data;
+
+        for ($i = 0; $i < count($chapter); $i++) {
+            try{
+                $chapterRes = db::insert('chapters', [
+                    'novel_id' => $novel_id,
+                    'chapter' => explode('章', $chapter[$i])[0] . '章',
+                    'description' => ltrim(explode('章', $chapter[$i])[1]),
+                    'sort' => substr($sort[$i], strrpos($sort[$i], '/') + 1, strpos($sort[$i], '.') - (strrpos($sort[$i], '/') + 1)),
+                    'created_at' => date('Y-m-d H:i:s', time())
+                ]);
+            } catch (Exception $exception) {
+                log::error('写入文章章节数据错误,文章id:' . $novel_id . ', 数据1:' . $chapter[$i] . '数据2:' . $sort[$i]);
+            }
+        }
+    }
+
+    /**
+     * 获取页面
+     * @return mixed|null|string
+     */
+    protected function getHtml()
+    {
+        return requests::get($this->url);
+    }
+}
 
 

@@ -1258,6 +1258,32 @@ class cls_redis
     {
         return json_decode($value, true);
     }
+
+    /**
+     * redis 订阅功能
+     * @param $channel
+     * @return mixed
+     */
+    public static function subscribe($channel)
+    {
+        self::init();
+        try{
+            if ( self::$links[self::$link_name] )
+            {
+                return self::$links[self::$link_name]->subscribe($channel);
+            }
+        }catch (Exception $e) {
+            $msg = "PHP Fatal error:  Uncaught exception 'RedisException' with message '".$e->getMessage()."'\n";
+            log::warn($msg);
+            if ($e->getCode() == 0)
+            {
+                self::$links[self::$link_name]->close();
+                self::$links[self::$link_name] = null;
+                usleep(100000);
+                return self::subscribe($channel);
+            }
+        }
+    }
 }
 
 
