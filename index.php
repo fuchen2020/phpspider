@@ -2,103 +2,88 @@
 /**
  * Created by PhpStorm.
  * User: Ning
- * Date: 2017/7/10
- * Time: 13:29
+ * Date: 2017/7/20
+ * Time: 15:33
  */
-ini_set("memory_limit", "1024M");
-require dirname(__FILE__) . '/core/init.php';
+require dirname(__FILE__) . '/novels.php';
 
-/* Do NOT delete this comment */
-/* 不要删除这段注释 */
+$redis = new Redis();
+$redis->connect('119.23.43.30');
+$redis->auth('2430114823');
+$redis->subscribe(['novels-cocoyo'], function ($redis, $channel, $msg) {
+    $msg = json_decode($msg, true);
 
-$url = "http://www.zwdu.com/book/23488/";
+    if (!empty($msg['url']) && !empty($msg['user_id'])) {
+        $url = $msg['url'];
+        $user_id = $msg['user_id'];
 
-$nameSelect = "//*[@id=\"info\"]/h1";
-$authorSelect = "//*[@id=\"info\"]/p[1]";
-$descriptionSelect = "//*[@id=\"intro\"]";
-$typeSelect = "//*[@id=\"wrapper\"]/div[4]/div[1]/a[1]";
-$imageSelect = "//*[@id=\"fmimg\"]/img/@src";
-$chapterSelect = "//*[@id=\"list\"]/dl/dd/a";
-$sortSelect = "//*[@id=\"list\"]/dl/dd/a/@href";
-//开始抓取
-$html = requests::get($url);
+        $xPathSelector = [
+            'name' => '//*[@id="info"]/h1',
+            'author' => '//*[@id="info"]/p[1]',
+            'description' => '//*[@id="intro"]',
+            'type' => '//*[@id="wrapper"]/div[4]/div[1]/a[1]',
+            'image' => '//*[@id="fmimg"]/img/@src',
+            'chapter' => '//*[@id="list"]/dl/dd/a',
+            'sort' => '//*[@id="list"]/dl/dd/a/@href'
+        ];
 
-$data['name'] = selector::select($html, $nameSelect);
-$data['author'] = selector::select($html, $authorSelect);
-$data['description'] = selector::select($html, $descriptionSelect);
-$data['type'] = selector::select($html, $typeSelect);
-$data['image'] = selector::select($html, $imageSelect);
-$chapters = selector::select($html, $chapterSelect);
-$sorts = selector::select($html, $sortSelect);
+        $novels = new novels($url, $user_id, $xPathSelector);
 
-$data['author'] = trim(substr($data['author'], strpos($data['author'], '：') + 3), '');
-$data['description'] = str_replace(' ', '', $data['description']);
-$data['created_at'] = date('Y-m-d H:i:s', time());
+        $novel_id = $novels->getNovelInfo();
 
-db::begin_tran();
-$res = db::insert('novels', $data);
+        //开始爬取内容
+        if ($novel_id) {
+            $configs = array(
+                'name' => '小说',
+                'tasknum' => 1,
+                'domains' => array(
+                    'www.zwdu.com'
+                ),
+                'scan_urls' => array(
+                    $url
+                ),
+                'content_url_regexes' => array(
+                    $url . '\d+.html'
+                ),
+                'fields' => array(
+                    array(
+                        'name' => 'content',
+                        'selector' => '//*[@id="content"]',
+                        'required' => true
+                    )
+                )
+            );
 
-if (false === $res) {
-    db::rollback();
-    return log::error('写入数据失败,信息:描述写入失败');
-}
+            $spider = new phpspider($configs);
 
-for ($i = 0; $i < count($chapters); $i++) {
-    $chapter = db::insert('chapters', [
-                'novel_id' => $res,
-                'chapter' => explode('章', $chapters[$i])[0] . '章',
-                'description' => ltrim(explode('章', $chapters[$i])[1]),
-                'sort' => substr($sorts[$i], strrpos($sorts[$i], '/') + 1, strpos($sorts[$i], '.') - (strrpos($sorts[$i], '/') + 1)),
-                'created_at' => date('Y-m-d H:i:s', time())
-            ]);
-    if (false === $chapter) {
-        db::rollback();
-        return log::error('写入数据失败,信息:描述写入内容');
-    }
-}
-db::commit();
+            $spider->on_extract_field = function ($fielaname, $data, $page)
+            {
+                if ($fielaname == 'content') {
+                    str_replace(' ', '', $data['content']);
+                }
 
+                return $data;
+            };
 
-$configs = array(
-    'name' => '小说',
-    'tasknum' => 1,
-    'domains' => array(
-        'www.zwdu.com'
-    ),
-    'scan_urls' => array(
-        'http://www.zwdu.com/book/23488/'
-    ),
-    'content_url_regexes' => array(
-        'http://www.zwdu.com/book/23488/\d+.html'
-    ),
-    'fields' => array(
-        array(
-            'name' => 'content',
-            'selector' => '//*[@id="content"]',
-            'required' => true
-        )
-    )
-);
+            $spider->on_extract_page = function ($page, $data) use ($novel_id)
+            {
+                //截取sort
+                $url = $page['url'];
 
-$spider = new phpspider($configs);
+                $sort = substr($url, strrpos($url, '/') + 1, strrpos($url, '.') - (strrpos($url, '/') + 1));
+                //写入数据库
+                try{
+                    db::update('chapters', ['content' => $data['content']], ["sort = {$sort}"]);
+                } catch (Exception $e) {
+                    Log::error('更新章节内容失败:' . $e->getMessage() . ',小说id:' . $novel_id . ',sort:' . $sort);
+                }
 
-$spider->on_extract_field = function ($fielaname, $data, $page)
-{
-    if ($fielaname == 'content') {
-        str_replace(' ', '', $data['content']);
+            };
+
+            $spider->start();
+        }
     }
 
-    return $data;
-};
+});
 
-$spider->on_extract_page = function ($page, $data)
-{
-    //截取sort
-    $url = $page['url'];
 
-    $sort = substr($url, strrpos($url, '/') + 1, strrpos($url, '.') - (strrpos($url, '/') + 1));
-    //写入数据库
-    db::update('chapters', ['content' => $data['content']], ["sort = {$sort}"]);
-};
-
-$spider->start();

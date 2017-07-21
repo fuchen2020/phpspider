@@ -6,6 +6,7 @@
  * Time: 14:32
  */
 ini_set("memory_limit", "1024M");
+ini_set('default_socket_timeout', -1);
 require dirname(__FILE__) . '/core/init.php';
 
 class novels
@@ -21,14 +22,21 @@ class novels
     protected $xPathSelectors = [];
 
     /**
+     * @var integer
+     */
+    protected $user_id;
+
+    /**
      * novels constructor.
      * @param $url
+     * @param $user_id
      * @param array $xPathSelectors
      */
-    public function __construct($url, $xPathSelectors = [])
+    public function __construct($url, $user_id, $xPathSelectors = [])
     {
         $this->url = $url;
         $this->xPathSelectors = $xPathSelectors;
+        $this->user_id = $user_id;
     }
 
     /**
@@ -63,6 +71,7 @@ class novels
         $res = db::insert('novels', [
             'name' => $data['name'],
             'author' => $data['author'],
+            'user_id' => $this->user_id,
             'description' => $data['description'],
             'type' => $data['type'],
             'image' => $data['image'],
