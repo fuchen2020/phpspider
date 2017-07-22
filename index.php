@@ -8,11 +8,10 @@
 require dirname(__FILE__) . '/novels.php';
 
 $redis = new Redis();
-$redis->connect('119.23.43.30');
-$redis->auth('2430114823');
+$redis->connect('');
+$redis->auth('');
 $redis->subscribe(['novels-cocoyo'], function ($redis, $channel, $msg) {
     $msg = json_decode($msg, true);
-
     if (!empty($msg['url']) && !empty($msg['user_id'])) {
         $url = $msg['url'];
         $user_id = $msg['user_id'];
@@ -73,7 +72,7 @@ $redis->subscribe(['novels-cocoyo'], function ($redis, $channel, $msg) {
                 $sort = substr($url, strrpos($url, '/') + 1, strrpos($url, '.') - (strrpos($url, '/') + 1));
                 //写入数据库
                 try{
-                    db::update('chapters', ['content' => $data['content']], ["sort = {$sort}"]);
+                    db::update('chapters', ['content' => $data['content']], ["sort = {$sort} and novel_id = {$novel_id}"]);
                 } catch (Exception $e) {
                     Log::error('更新章节内容失败:' . $e->getMessage() . ',小说id:' . $novel_id . ',sort:' . $sort);
                 }
