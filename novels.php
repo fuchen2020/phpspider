@@ -75,6 +75,7 @@ class novels
             'description' => $data['description'],
             'type' => $data['type'],
             'image' => $data['image'],
+            'url' => $this->url,
             'created_at' => date('Y-m-d H:i:s', time())
         ]);
 

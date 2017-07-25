@@ -39,7 +39,6 @@ define('CORE', dirname(__FILE__));
 define('PATH_ROOT', CORE."/../");
 define('PATH_DATA', CORE."/../data");
 define('PATH_LIBRARY', CORE."/../library");
-define('PATH_VENDOR', CORE."/../vendor");
 
 //系统配置
 if( file_exists( PATH_ROOT."/config/inc_config.php" ) )
@@ -54,7 +53,6 @@ require CORE.'/db.php';
 require CORE.'/cache.php';
 require CORE."/worker.php"; 
 require CORE."/phpspider.php";
-require PATH_VENDOR . '/autoload.php';
 
 // 启动的时候生成data目录
 util::path_exists(PATH_DATA);
